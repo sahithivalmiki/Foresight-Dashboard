@@ -1,619 +1,493 @@
 import streamlit as st
 import pandas as pd
-import plotly.graph_objects as go
 import plotly.express as px
 
-from src.forecasting import (
-    holt_winters_forecast,
-    seasonal_naive_forecast,
-    backtest_holt_winters
-)
+from sahithimeenugu_foresightdashboard.data_loader import load_retail_data
 
-from src.anomaly import (
-    detect_anomalies
-)
 
-from src.insights import (
-    get_forecast_direction,
-    sector_growth
-)
+# ============================================================
+# PAGE CONFIGURATION
+# ============================================================
+
 st.set_page_config(
-
-    page_title="FORESIGHT",
-
-    page_icon="🔭",
-
+    page_title="Foresight | Retail Intelligence",
+    page_icon="📈",
     layout="wide",
-
     initial_sidebar_state="expanded"
 )
+
+
+# ============================================================
+# CUSTOM CSS
+# ============================================================
+
 st.markdown(
     """
     <style>
 
-    .main-title {
+    .main {
+        background-color: #f7f9fc;
+    }
 
+    .block-container {
+        padding-top: 2rem;
+        padding-bottom: 2rem;
+    }
+
+    .hero {
+        padding: 25px;
+        border-radius: 18px;
+        background: linear-gradient(
+            135deg,
+            #111827,
+            #1f2937
+        );
+        color: white;
+        margin-bottom: 25px;
+    }
+
+    .hero h1 {
         font-size: 42px;
-
-        font-weight: 800;
-
-        margin-bottom: 0px;
-
+        margin-bottom: 5px;
     }
 
-    .subtitle {
-
-        font-size: 18px;
-
-        color: #6b7280;
-
-        margin-bottom: 30px;
-
+    .hero p {
+        font-size: 17px;
+        color: #d1d5db;
     }
 
-    .section {
+    .metric-card {
+        background: white;
+        padding: 20px;
+        border-radius: 15px;
+        border: 1px solid #e5e7eb;
+        box-shadow: 0 3px 12px rgba(0,0,0,0.05);
+    }
 
-        font-size: 24px;
-
+    .section-title {
+        font-size: 25px;
         font-weight: 700;
-
         margin-top: 30px;
-
-        margin-bottom: 15px;
-
+        margin-bottom: 10px;
     }
 
     </style>
     """,
-
-    unsafe_allow_html=True
-)
-st.markdown(
-    '<div class="main-title">🔭 FORESIGHT</div>',
     unsafe_allow_html=True
 )
 
+
+# ============================================================
+# LOAD DATA
+# ============================================================
+
+@st.cache_data
+def get_data():
+
+    df = load_retail_data()
+
+    # Convert period name into actual date
+    df["date"] = pd.to_datetime(
+        df["per_name"],
+        format="%b-%Y",
+        errors="coerce"
+    )
+
+    # Convert sales to million dollars
+    df["sales_million"] = pd.to_numeric(
+        df["val"],
+        errors="coerce"
+    )
+
+    # Remove invalid dates
+    df = df.dropna(
+        subset=["date"]
+    )
+
+    # Sort data
+    df = df.sort_values(
+        ["cat_code", "date"]
+    )
+
+    return df
+
+
+df = get_data()
+
+
+# ============================================================
+# HEADER
+# ============================================================
+
 st.markdown(
-    '<div class="subtitle">'
-    'Multi-Sector Retail Forecasting & Intelligence Platform'
-    '</div>',
+    """
+    <div class="hero">
+
+        <h1>📈 FORESIGHT</h1>
+
+        <p>
+        Retail Intelligence & Forecasting Dashboard
+        </p>
+
+        <p>
+        Understand historical retail sales, identify trends,
+        compare categories and prepare for future demand.
+        </p>
+
+    </div>
+    """,
     unsafe_allow_html=True
 )
-st.sidebar.title("FORESIGHT")
+
+
+# ============================================================
+# SIDEBAR
+# ============================================================
+
+st.sidebar.title("🎛️ Dashboard Controls")
 
 st.sidebar.markdown(
-    "### Control Center"
+    "Use the controls below to explore the retail market."
 )
 
-forecast_period = st.sidebar.slider(
-
-    "Forecast horizon",
-
-    min_value=3,
-
-    max_value=24,
-
-    value=12
+# Category selection
+categories = sorted(
+    df["cat_desc"].dropna().unique()
 )
 
-model_name = st.sidebar.selectbox(
-
-    "Forecast model",
-
-    [
-        "Holt-Winters",
-        "Seasonal Naive"
-    ]
+selected_category = st.sidebar.selectbox(
+    "Select Retail Category",
+    categories
 )
 
-scenario = st.sidebar.slider(
 
-    "Scenario adjustment",
+# Date range
+min_date = df["date"].min().date()
+max_date = df["date"].max().date()
 
-    -15,
-
-    15,
-
-    0
-)
-sector_names = {
-
-    "total_retail":
-        "Total Retail",
-
-    "motor_vehicle":
-        "Motor Vehicle",
-
-    "furniture":
-        "Furniture",
-
-    "electronics":
-        "Electronics",
-
-    "building_material":
-        "Building Materials",
-
-    "food_beverage":
-        "Food & Beverage",
-
-    "grocery":
-        "Grocery",
-
-    "health_personal":
-        "Health & Personal Care",
-
-    "gasoline":
-        "Gasoline",
-
-    "clothing":
-        "Clothing",
-
-    "sporting_goods":
-        "Sporting Goods",
-
-    "general_merchandise":
-        "General Merchandise",
-
-    "miscellaneous":
-        "Miscellaneous",
-
-    "nonstore":
-        "Nonstore Retail",
-
-    "food_services":
-        "Food Services"
-}
-selected_sector = st.sidebar.selectbox(
-
-    "Select retail sector",
-
-    list(sector_names.keys()),
-
-    format_func=lambda x:
-        sector_names[x]
-)
-df = pd.read_csv(
-    "data/foresight_retail.csv"
+selected_dates = st.sidebar.date_input(
+    "Select Date Range",
+    value=(min_date, max_date),
+    min_value=min_date,
+    max_value=max_date
 )
 
-df["date"] = pd.to_datetime(
-    df["date"]
-)
 
-df = df.sort_values(
-    "date"
-)
-series = (
+# ============================================================
+# FILTER DATA
+# ============================================================
 
-    df
-    .set_index("date")
-    [selected_sector]
-    .dropna()
-)
-if model_name == "Holt-Winters":
+category_df = df[
+    df["cat_desc"] == selected_category
+].copy()
 
-    forecast = holt_winters_forecast(
 
-        series,
+if len(selected_dates) == 2:
 
-        forecast_period
+    start_date = pd.Timestamp(
+        selected_dates[0]
     )
+
+    end_date = pd.Timestamp(
+        selected_dates[1]
+    )
+
+    category_df = category_df[
+        (category_df["date"] >= start_date)
+        &
+        (category_df["date"] <= end_date)
+    ]
+
+
+# ============================================================
+# KPI CALCULATIONS
+# ============================================================
+
+if not category_df.empty:
+
+    latest_sales = category_df.iloc[-1]["sales_million"]
+
+    average_sales = category_df[
+        "sales_million"
+    ].mean()
+
+    highest_sales = category_df[
+        "sales_million"
+    ].max()
+
+    lowest_sales = category_df[
+        "sales_million"
+    ].min()
 
 else:
 
-    forecast = seasonal_naive_forecast(
+    latest_sales = 0
+    average_sales = 0
+    highest_sales = 0
+    lowest_sales = 0
 
-        series,
 
-        forecast_period
-    )
-    forecast = (
+# ============================================================
+# KPI CARDS
+# ============================================================
 
-    forecast
-
-    * (1 + scenario / 100)
-
-)
-    latest = series.iloc[-1]
-
-previous = series.iloc[-2]
-
-mom_growth = (
-
-    (latest - previous)
-
-    / previous
-
-) * 100
-
-forecast_average = forecast.mean()
-
-forecast_change = (
-
-    (forecast.iloc[-1]
-     - forecast.iloc[0])
-
-    / forecast.iloc[0]
-
-) * 100
-col1, col2, col3, col4 = st.columns(4)
-
-col1.metric(
-
-    "Latest Sales",
-
-    f"${latest:,.0f}M"
-
-)
-
-col2.metric(
-
-    "MoM Growth",
-
-    f"{mom_growth:+.2f}%"
-
-)
-
-col3.metric(
-
-    "Next Forecast",
-
-    f"${forecast.iloc[0]:,.0f}M"
-
-)
-
-col4.metric(
-
-    "Forecast Direction",
-
-    f"{forecast_change:+.2f}%"
-
-)
 st.markdown(
-    '<div class="section">📈 Forecast Outlook</div>',
+    '<div class="section-title">📊 Market Snapshot</div>',
     unsafe_allow_html=True
 )
 
-fig = go.Figure()
+col1, col2, col3, col4 = st.columns(4)
 
-fig.add_trace(
 
-    go.Scatter(
+with col1:
 
-        x=series.index,
-
-        y=series.values,
-
-        mode="lines",
-
-        name="Historical"
-
+    st.metric(
+        "Latest Sales",
+        f"${latest_sales:,.0f}M"
     )
 
+
+with col2:
+
+    st.metric(
+        "Average Sales",
+        f"${average_sales:,.0f}M"
+    )
+
+
+with col3:
+
+    st.metric(
+        "Highest Sales",
+        f"${highest_sales:,.0f}M"
+    )
+
+
+with col4:
+
+    st.metric(
+        "Lowest Sales",
+        f"${lowest_sales:,.0f}M"
+    )
+
+
+# ============================================================
+# SALES TREND
+# ============================================================
+
+st.markdown(
+    '<div class="section-title">📈 Historical Sales Trend</div>',
+    unsafe_allow_html=True
 )
 
-fig.add_trace(
 
-    go.Scatter(
-
-        x=forecast.index,
-
-        y=forecast.values,
-
-        mode="lines+markers",
-
-        name="Forecast",
-
-        line=dict(
-
-            dash="dash",
-
-            width=3
-
-        )
-
-    )
-
+fig = px.line(
+    category_df,
+    x="date",
+    y="sales_million",
+    title=f"Monthly Sales — {selected_category}",
+    markers=False
 )
 
 fig.update_layout(
-
-    height=500,
-
-    hovermode="x unified",
-
     xaxis_title="Date",
-
-    yaxis_title="Sales ($ Millions)",
-
-    legend=dict(
-
-        orientation="h",
-
-        y=1.02,
-
-        x=0
-
-    )
-
+    yaxis_title="Sales ($ Million)",
+    hovermode="x unified",
+    height=450
 )
 
 st.plotly_chart(
-
     fig,
-
     use_container_width=True
-
 )
+
+
+# ============================================================
+# YEARLY SALES
+# ============================================================
+
 st.markdown(
-    '<div class="section">🏪 Sector Intelligence</div>',
+    '<div class="section-title">📅 Yearly Performance</div>',
     unsafe_allow_html=True
 )
 
-sector_values = []
+if not category_df.empty:
 
-for column, name in sector_names.items():
+    category_df["year"] = category_df[
+        "date"
+    ].dt.year
 
-    if column in df.columns:
-
-        latest_value = df[column].iloc[-1]
-
-        sector_values.append({
-
-            "Sector": name,
-
-            "Sales": latest_value
-
-        })
-
-sector_df = pd.DataFrame(
-    sector_values
-)
-
-sector_df = sector_df.sort_values(
-    "Sales",
-    ascending=False
-)
-sector_fig = px.bar(
-
-    sector_df,
-
-    x="Sales",
-
-    y="Sector",
-
-    orientation="h",
-
-    title="Latest Retail Sales by Sector"
-)
-
-sector_fig.update_layout(
-    height=600
-)
-
-st.plotly_chart(
-    sector_fig,
-    use_container_width=True
-)
-growth_rows = []
-
-for column, name in sector_names.items():
-
-    if column not in df.columns:
-
-        continue
-
-    if len(df) < 13:
-
-        continue
-
-    latest = df[column].iloc[-1]
-
-    year_ago = df[column].iloc[-13]
-
-    growth = (
-        (latest - year_ago)
-        / year_ago
-    ) * 100
-
-    growth_rows.append({
-
-        "Sector": name,
-
-        "Latest Sales":
-            latest,
-
-        "YoY Growth (%)":
-            growth
-
-    })
-
-growth_df = pd.DataFrame(
-    growth_rows
-)
-st.dataframe(
-
-    growth_df.style.format({
-
-        "Latest Sales":
-            "${:,.0f}M",
-
-        "YoY Growth (%)":
-            "{:+.2f}%"
-
-    }),
-
-    use_container_width=True,
-
-    hide_index=True
-
-)
-st.markdown(
-    '<div class="section">🗓️ Seasonality</div>',
-    unsafe_allow_html=True
-)
-
-seasonal = (
-
-    df
-    .assign(
-        month=df["date"].dt.month
+    yearly_sales = (
+        category_df
+        .groupby("year")["sales_million"]
+        .sum()
+        .reset_index()
     )
-    .groupby("month")[selected_sector]
+
+    fig_year = px.bar(
+        yearly_sales,
+        x="year",
+        y="sales_million",
+        title="Annual Sales"
+    )
+
+    fig_year.update_layout(
+        xaxis_title="Year",
+        yaxis_title="Total Sales ($ Million)",
+        height=400
+    )
+
+    st.plotly_chart(
+        fig_year,
+        use_container_width=True
+    )
+
+
+# ============================================================
+# MONTHLY SEASONALITY
+# ============================================================
+
+st.markdown(
+    '<div class="section-title">🗓️ Monthly Seasonality</div>',
+    unsafe_allow_html=True
+)
+
+if not category_df.empty:
+
+    category_df["month"] = category_df[
+        "date"
+    ].dt.month
+
+    category_df["month_name"] = category_df[
+        "date"
+    ].dt.strftime("%b")
+
+    monthly_pattern = (
+        category_df
+        .groupby(
+            ["month", "month_name"]
+        )["sales_million"]
+        .mean()
+        .reset_index()
+        .sort_values("month")
+    )
+
+    fig_season = px.line(
+        monthly_pattern,
+        x="month_name",
+        y="sales_million",
+        markers=True,
+        title="Average Sales by Month"
+    )
+
+    fig_season.update_layout(
+        xaxis_title="Month",
+        yaxis_title="Average Sales ($ Million)",
+        height=400
+    )
+
+    st.plotly_chart(
+        fig_season,
+        use_container_width=True
+    )
+
+
+# ============================================================
+# CATEGORY COMPARISON
+# ============================================================
+
+st.markdown(
+    '<div class="section-title">🏪 Retail Category Comparison</div>',
+    unsafe_allow_html=True
+)
+
+category_summary = (
+    df.groupby("cat_desc")["sales_million"]
     .mean()
-)
-
-month_names = [
-
-    "Jan", "Feb", "Mar",
-    "Apr", "May", "Jun",
-    "Jul", "Aug", "Sep",
-    "Oct", "Nov", "Dec"
-
-]
-
-season_fig = go.Figure()
-
-season_fig.add_trace(
-
-    go.Bar(
-
-        x=month_names,
-
-        y=seasonal.values,
-
-        name="Average Sales"
-
+    .reset_index()
+    .sort_values(
+        "sales_million",
+        ascending=False
     )
 )
 
-season_fig.update_layout(
+fig_category = px.bar(
+    category_summary,
+    x="sales_million",
+    y="cat_desc",
+    orientation="h",
+    title="Average Monthly Sales by Category"
+)
 
-    height=400,
-
-    xaxis_title="Month",
-
-    yaxis_title="Average Sales ($ Millions)"
-
+fig_category.update_layout(
+    xaxis_title="Average Sales ($ Million)",
+    yaxis_title="Retail Category",
+    height=650
 )
 
 st.plotly_chart(
-
-    season_fig,
-
+    fig_category,
     use_container_width=True
-
 )
+
+
+# ============================================================
+# RECENT DATA
+# ============================================================
+
 st.markdown(
-    '<div class="section">🚨 Anomaly Monitor</div>',
+    '<div class="section-title">🔎 Recent Observations</div>',
     unsafe_allow_html=True
 )
 
-anomaly_df = detect_anomalies(
-    series
-)
-
-anomalies = anomaly_df[
-    anomaly_df["anomaly"] == True
-]
-
-st.dataframe(
-
-    anomalies[
+recent_data = (
+    category_df[
         [
             "date",
-            "sales",
-            "z_score"
+            "cat_desc",
+            "sales_million"
         ]
     ]
     .sort_values(
         "date",
         ascending=False
     )
-    .head(15),
+    .head(12)
+)
 
+recent_data = recent_data.rename(
+    columns={
+        "date": "Date",
+        "cat_desc": "Category",
+        "sales_million": "Sales ($M)"
+    }
+)
+
+st.dataframe(
+    recent_data,
     use_container_width=True,
-
     hide_index=True
+)
 
-)
-direction, change = (
-    get_forecast_direction(
-        forecast
-    )
-)
+
+# ============================================================
+# FOOTER
+# ============================================================
 
 st.markdown(
-    '<div class="section">💡 FORESIGHT Signal</div>',
+    """
+    <br>
+    <hr>
+
+    <center>
+
+    <b>FORESIGHT</b> — Retail Intelligence Dashboard
+
+    <br>
+
+    Built with Python • Pandas • Plotly • Streamlit
+
+    </center>
+    """,
     unsafe_allow_html=True
 )
-
-if direction == "Increasing":
-
-    st.success(
-
-        f"""
-        **{sector_names[selected_sector]}**
-        has an estimated upward forecast trajectory
-        of **{change:+.2f}%** over the selected forecast horizon.
-        """
-
-    )
-
-elif direction == "Decreasing":
-
-    st.warning(
-
-        f"""
-        **{sector_names[selected_sector]}**
-        has an estimated downward forecast trajectory
-        of **{change:+.2f}%** over the selected forecast horizon.
-        """
-
-    )
-
-else:
-
-    st.info(
-
-        f"""
-        **{sector_names[selected_sector]}**
-        has a relatively stable forecast trajectory.
-        """
-
-    )
-    st.markdown(
-    '<div class="section">🧪 Model Lab</div>',
-    unsafe_allow_html=True
-)
-
-if len(series) >= 48:
-
-    metrics = backtest_holt_winters(
-        series,
-        test_months=24
-    )
-
-    m1, m2, m3 = st.columns(3)
-
-    m1.metric(
-        "MAE",
-        f"{metrics['MAE']:,.2f}"
-    )
-
-    m2.metric(
-        "RMSE",
-        f"{metrics['RMSE']:,.2f}"
-    )
-
-    m3.metric(
-        "MAPE",
-        f"{metrics['MAPE']:.2f}%"
-    )
-
-else:
-
-    st.info(
-        "Not enough historical observations "
-        "for reliable backtesting."
-    )
