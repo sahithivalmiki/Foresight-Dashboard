@@ -237,7 +237,7 @@ The data pipeline is designed to:
 * Scikit-learn
 
 ### Dashboard
-
+[open streamlit Dasboard](https://foresight-dashboard-hcgwv9mjjeutbddiy8egpb.streamlit.app/)
 * Streamlit
 
 ### File Processing
